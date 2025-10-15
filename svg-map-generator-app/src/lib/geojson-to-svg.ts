@@ -5,7 +5,6 @@ import type {
   LineString,
   MultiLineString,
   MultiPolygon,
-  Point,
   Polygon,
 } from "geojson";
 
@@ -18,11 +17,9 @@ type Bounds = {
 
 interface ConversionOptions {
   width?: number;
-  pointRadius?: number;
 }
 
 const DEFAULT_WIDTH = 1024;
-const DEFAULT_POINT_RADIUS = 3;
 
 type ProjectedPoint = [number, number];
 
@@ -99,53 +96,32 @@ function polygonToPath(
 function geometryToSvg(
   geometry: Geometry,
   projection: ReturnType<typeof prepareProjection>,
-  pointRadius: number,
 ) {
   switch (geometry.type) {
     case "LineString":
       return {
         paths: lineToPath((geometry as LineString).coordinates, projection),
         polygons: "",
-        points: "",
       };
     case "MultiLineString": {
       const parts = (geometry as MultiLineString).coordinates
         .map((segment) => lineToPath(segment, projection))
         .filter(Boolean);
-      return { paths: parts.join(" "), polygons: "", points: "" };
+      return { paths: parts.join(" "), polygons: "" };
     }
     case "Polygon":
       return {
         paths: "",
         polygons: polygonToPath((geometry as Polygon).coordinates, projection),
-        points: "",
       };
     case "MultiPolygon": {
       const shapes = (geometry as MultiPolygon).coordinates
         .map((shape) => polygonToPath(shape, projection))
         .filter(Boolean);
-      return { paths: "", polygons: shapes.join(" "), points: "" };
-    }
-    case "Point": {
-      const [lng, lat] = (geometry as Point).coordinates;
-      const [cx, cy] = toSvgPoint(lng, lat, projection);
-      return {
-        paths: "",
-        polygons: "",
-        points: `<circle cx="${cx}" cy="${cy}" r="${pointRadius}" />`,
-      };
-    }
-    case "MultiPoint": {
-      const nodes = geometry.coordinates
-        .map(([lng, lat]) => {
-          const [cx, cy] = toSvgPoint(lng, lat, projection);
-          return `<circle cx="${cx}" cy="${cy}" r="${pointRadius}" />`;
-        })
-        .join("");
-      return { paths: "", polygons: "", points: nodes };
+      return { paths: "", polygons: shapes.join(" ") };
     }
     default:
-      return { paths: "", polygons: "", points: "" };
+      return { paths: "", polygons: "" };
   }
 }
 
@@ -159,13 +135,11 @@ export function geoJsonToSvg(
   options: ConversionOptions = {},
 ) {
   const width = options.width ?? DEFAULT_WIDTH;
-  const pointRadius = options.pointRadius ?? DEFAULT_POINT_RADIUS;
 
   const projection = prepareProjection(bounds, width);
 
   const pathSegments: string[] = [];
   const polygonSegments: string[] = [];
-  const pointSegments: string[] = [];
 
   featureCollection.features.forEach((feature: Feature) => {
     const { geometry } = feature;
@@ -173,10 +147,9 @@ export function geoJsonToSvg(
       return;
     }
 
-    const { paths, polygons, points } = geometryToSvg(
+    const { paths, polygons } = geometryToSvg(
       geometry,
       projection,
-      pointRadius,
     );
 
     if (paths) {
@@ -186,10 +159,6 @@ export function geoJsonToSvg(
     if (polygons) {
       polygonSegments.push(`<path d="${dedupeWhitespace(polygons)}" />`);
     }
-
-    if (points) {
-      pointSegments.push(points);
-    }
   });
 
   const svg = [
@@ -198,7 +167,6 @@ export function geoJsonToSvg(
     "<style>",
     ".geom-lines{fill:none;stroke:#555;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;}",
     ".geom-polygons{fill:#9ec5fe33;stroke:#2b59c3;stroke-width:0.6;stroke-linejoin:round;}",
-    ".geom-points{fill:#d9534f;stroke:#ffffff;stroke-width:0.6;}",
     "</style>",
     "</defs>",
     "<g class=\"geom-polygons\">",
@@ -206,9 +174,6 @@ export function geoJsonToSvg(
     "</g>",
     "<g class=\"geom-lines\">",
     pathSegments.join(""),
-    "</g>",
-    "<g class=\"geom-points\">",
-    pointSegments.join(""),
     "</g>",
     "</svg>",
   ].join("");
