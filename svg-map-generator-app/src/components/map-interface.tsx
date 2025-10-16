@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/components/language-provider";
 import { Slider } from "@/components/ui/slider";
 
 type Bounds = {
@@ -114,9 +115,9 @@ function LatLngTracker({
   return null;
 }
 
-function formatBounds(bounds: Bounds | null) {
+function formatBounds(bounds: Bounds | null, fallback: string) {
   if (!bounds) {
-    return "Adjust the map to choose a region.";
+    return fallback;
   }
 
   return `N:${bounds.north.toFixed(5)}  S:${bounds.south.toFixed(
@@ -135,6 +136,8 @@ type StrokeControl = {
   outlines: number;
 };
 
+type ThemeMode = "light" | "dark";
+
 export function MapInterface() {
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [state, setState] = useState<DownloadState>({ status: "idle" });
@@ -145,6 +148,7 @@ export function MapInterface() {
   const [strokeScale, setStrokeScale] = useState<StrokeControl>({
     outlines: 1,
   });
+  const [theme, setTheme] = useState<ThemeMode>("light");
   const [previewDirty, setPreviewDirty] = useState(true);
   const suppressBoundsUpdate = useRef(0);
   const handleOutlineChange = useCallback((value: number) => {
@@ -164,6 +168,8 @@ export function MapInterface() {
   const [previewRenderError, setPreviewRenderError] = useState<string | null>(
     null
   );
+  const { messages } = useLanguage();
+  const text = messages.map;
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
   const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
@@ -171,6 +177,38 @@ export function MapInterface() {
   useEffect(() => {
     setIsClient(true);
   }, []);
+
+  useEffect(() => {
+    if (!isClient) {
+      return;
+    }
+    const root = document.documentElement;
+    const resolveTheme = () =>
+      root.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    let currentTheme = resolveTheme();
+    setTheme(currentTheme);
+
+    const handleThemeChange = (event: Event) => {
+      const detail = (event as CustomEvent<ThemeMode>).detail;
+      const next =
+        detail === "dark" || detail === "light" ? detail : resolveTheme();
+      if (next === currentTheme) {
+        return;
+      }
+      currentTheme = next;
+      setTheme(next);
+      setState({ status: "idle" });
+      setPreview(null);
+      setPreviewPng(null);
+      setPreviewDirty(true);
+      setPreviewRenderStatus("idle");
+      setPreviewRenderError(null);
+    };
+
+    window.addEventListener("mvf-theme-change", handleThemeChange);
+    return () =>
+      window.removeEventListener("mvf-theme-change", handleThemeChange);
+  }, [isClient]);
 
   const handleBoundsUpdate = useCallback((next: Bounds) => {
     setBounds(next);
@@ -206,7 +244,7 @@ export function MapInterface() {
       event.preventDefault();
       const query = searchQuery.trim();
       if (!query) {
-        setSearchError("Enter a place or address to search.");
+        setSearchError(text.searchErrors.empty);
         return;
       }
       try {
@@ -221,7 +259,7 @@ export function MapInterface() {
         );
         if (!response.ok) {
           const payload = await response.json().catch(() => null);
-          throw new Error(payload?.error ?? "Unable to find that location.");
+          throw new Error(payload?.error ?? text.searchErrors.notFound);
         }
         const {
           bounds: foundBounds,
@@ -279,23 +317,23 @@ export function MapInterface() {
         }
       } catch (error) {
         console.error(error);
-        setSearchError(
-          error instanceof Error
+        const message =
+          error instanceof Error && error.message
             ? error.message
-            : "Unexpected error performing search."
-        );
+            : text.searchErrors.unexpected;
+        setSearchError(message);
       } finally {
         setSearchLoading(false);
       }
     },
-    [searchQuery]
+    [searchQuery, text]
   );
 
   const handleGenerate = useCallback(async () => {
     if (!bounds) {
       setState({
         status: "error",
-        message: "Move the map to select a region first.",
+        message: text.errors.noBounds,
       });
       return;
     }
@@ -315,12 +353,13 @@ export function MapInterface() {
           bounds,
           zoom: mapZoom,
           strokeScale,
+          theme,
         }),
       });
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? "Failed to generate SVG preview.");
+        throw new Error(payload?.error ?? text.errors.exportFailed);
       }
 
       const { svg, bounds: updatedBounds } = (await response.json()) as {
@@ -336,18 +375,16 @@ export function MapInterface() {
       setState({
         status: "error",
         message:
-          error instanceof Error
-            ? error.message
-            : "Something went wrong while exporting the map.",
+          error instanceof Error ? error.message : text.errors.exportGeneric,
       });
       setPreviewRenderStatus("error");
       setPreviewPng(null);
       setPreviewRenderError(
-        error instanceof Error ? error.message : "Unable to generate preview."
+        error instanceof Error ? error.message : text.errors.previewFailed
       );
       setPreviewDirty(true);
     }
-  }, [bounds, mapZoom, strokeScale]);
+  }, [bounds, mapZoom, strokeScale, text, theme]);
 
   useEffect(() => {
     if (!preview) {
@@ -388,7 +425,7 @@ export function MapInterface() {
       const context = canvas.getContext("2d");
       if (!context) {
         setPreviewRenderStatus("error");
-        setPreviewRenderError("Unable to render preview canvas.");
+        setPreviewRenderError(text.previewCanvasError);
         URL.revokeObjectURL(url);
         return;
       }
@@ -403,7 +440,7 @@ export function MapInterface() {
     img.onerror = () => {
       if (!cancelled) {
         setPreviewRenderStatus("error");
-        setPreviewRenderError("Unable to convert SVG preview to PNG.");
+        setPreviewRenderError(text.previewConvertError);
       }
       URL.revokeObjectURL(url);
     };
@@ -413,16 +450,13 @@ export function MapInterface() {
       cancelled = true;
       URL.revokeObjectURL(url);
     };
-  }, [preview]);
+  }, [preview, text]);
 
   return (
     <Card className="w-full max-w-6xl">
       <CardHeader>
-        <CardTitle>OpenStreetMap SVG Export</CardTitle>
-        <CardDescription>
-          Pan and zoom to the area you want, then download an SVG vector
-          snapshot of the data.
-        </CardDescription>
+        <CardTitle>{text.title}</CardTitle>
+        <CardDescription>{text.subtitle}</CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
@@ -435,7 +469,7 @@ export function MapInterface() {
                 >
                   <input
                     className="flex-1 rounded-md border border-transparent bg-transparent text-sm text-foreground focus:outline-none"
-                    placeholder="Search cities, addresses, landmarks…"
+                    placeholder={text.searchPlaceholder}
                     value={searchQuery}
                     onChange={(event) => {
                       setSearchQuery(event.target.value);
@@ -450,14 +484,14 @@ export function MapInterface() {
                     variant="outline"
                     className="h-9 w-9 rounded-full !p-0"
                     disabled={searchLoading || !searchQuery.trim()}
-                    aria-label="Search the map"
+                    aria-label={text.searchButtonLabel}
                   >
                     {searchLoading ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Search className="h-4 w-4" />
                     )}
-                    <span className="sr-only">Search</span>
+                    <span className="sr-only">{text.searchButtonSr}</span>
                   </Button>
                 </form>
               </div>
@@ -483,7 +517,7 @@ export function MapInterface() {
               </MapContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-                Loading map…
+                {text.loadingMap}
               </div>
             )}
           </div>
@@ -493,39 +527,41 @@ export function MapInterface() {
 
           <div className="space-y-3 rounded-lg border border-border bg-card/70 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold text-foreground">Preview</p>
+              <p className="text-sm font-semibold text-foreground">
+                {text.previewHeading}
+              </p>
               {previewRenderStatus === "ready" && (
                 <span className="text-xs text-muted-foreground">
-                  {mapZoom.toFixed(2)}× zoom
+                  {text.previewZoom.replace("{value}", mapZoom.toFixed(2))}
                 </span>
               )}
             </div>
             <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border">
               {previewRenderStatus === "rendering" && (
                 <p className="text-xs text-muted-foreground">
-                  Rendering PNG preview…
+                  {text.previewStatus.rendering}
                 </p>
               )}
               {previewRenderStatus === "error" && (
                 <p className="text-xs text-rose-500">
-                  {previewRenderError ?? "Unable to render preview."}
+                  {previewRenderError ?? text.previewStatus.error}
                 </p>
               )}
               {previewRenderStatus === "ready" && previewPng && (
                 <img
                   src={previewPng}
-                  alt="Map preview"
+                  alt={text.previewAlt}
                   className="max-h-[360px] w-full rounded-md object-cover"
                 />
               )}
               {previewRenderStatus === "idle" && (
                 <p className="text-xs text-muted-foreground">
-                  Generate a preview to see a raster approximation of the SVG.
+                  {text.previewStatus.idle}
                 </p>
               )}
               {previewDirty && previewRenderStatus === "ready" && (
                 <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-[11px] text-white">
-                  Preview out of date — run "Generate preview" again.
+                  {text.previewOutdatedBadge}
                 </div>
               )}
             </div>
@@ -534,13 +570,15 @@ export function MapInterface() {
 
         <div className="space-y-4">
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground">
-            <p className="font-medium text-foreground">Current bounds</p>
+            <p className="font-medium text-foreground">
+              {text.areaSection.title}
+            </p>
             <p className="font-mono text-xs text-foreground/80">
-              {formatBounds(bounds)}
+              {formatBounds(bounds, text.boundsPrompt)}
             </p>
             {bounds && (
               <p>
-                Approximate area:{" "}
+                {text.areaSection.approximate}{" "}
                 <span className="font-medium text-foreground">
                   {formatAreaDegrees(area)}
                 </span>
@@ -548,8 +586,7 @@ export function MapInterface() {
             )}
             {areaIsLarge && (
               <p className="text-xs text-amber-500">
-                Tip: Zoom in further to avoid slow Overpass responses and
-                enormous SVG files.
+                {text.areaSection.zoomTip}
               </p>
             )}
           </div>
@@ -557,22 +594,21 @@ export function MapInterface() {
           <div className="space-y-4 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <div>
               <p className="text-sm font-medium text-foreground">
-                1. Adjust outline thickness
+                {text.strokeHeading}
               </p>
               <p className="text-xs text-muted-foreground">
-                Use the slider to fine-tune the border weight applied to
-                exported map features.
+                {text.strokeDescription}
               </p>
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Outlines</span>
+                <span>{text.outlinesLabel}</span>
                 <span className="font-mono text-foreground">
                   {strokeScale.outlines.toFixed(2)}×
                 </span>
               </div>
               <Slider
-                aria-label="Outlines stroke scale"
+                aria-label={text.outlinesLabel}
                 min={0.1}
                 max={3}
                 step={0.05}
@@ -589,14 +625,16 @@ export function MapInterface() {
 
           <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <p className="text-sm font-medium text-foreground">
-              2. Generate a fresh preview
+              {text.generateHeading}
             </p>
             <Button
               className="w-full"
               disabled={!bounds || areaIsLarge || state.status === "loading"}
               onClick={handleGenerate}
             >
-              {state.status === "loading" ? "Generating…" : "Generate preview"}
+              {state.status === "loading"
+                ? text.generateButtonLoading
+                : text.generateButton}
             </Button>
             {state.status === "error" && (
               <p className="text-xs text-rose-600">{state.message}</p>
@@ -605,7 +643,7 @@ export function MapInterface() {
 
           <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <p className="text-sm font-medium text-foreground">
-              3. Download the SVG
+              {text.downloadHeading}
             </p>
             <Button
               className="w-full !bg-green-500 disabled:!bg-primary"
@@ -623,30 +661,17 @@ export function MapInterface() {
                 window.setTimeout(() => URL.revokeObjectURL(url), 1000);
               }}
             >
-              Download SVG
+              {text.downloadButton}
             </Button>
-            <p className="text-xs text-muted-foreground">
-              The download always uses the full-resolution SVG returned by the
-              server.
-            </p>
+            <p className="text-xs text-muted-foreground">{text.downloadHint}</p>
             {previewDirty && previewRenderStatus === "ready" && (
               <p className="text-xs text-amber-500">
-                The preview changed. Generate a new preview before downloading.
+                {text.downloadDirtyWarning}
               </p>
             )}
           </div>
-
-          {/* <p className="text-xs text-muted-foreground">
-            Powered by the public Overpass API. For production use, consider
-            hosting your own Overpass instance or caching requests to stay
-            within usage policies.
-          </p> */}
         </div>
       </CardContent>
-      {/* <CardFooter className="justify-end text-xs text-muted-foreground">
-        SVG exports include roads, buildings, and points of interest present in
-        the selected map window.
-      </CardFooter> */}
     </Card>
   );
 }

@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { Moon, SunMedium } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { useLanguage } from "@/components/language-provider";
 
 type Theme = "light" | "dark";
 
 const STORAGE_KEY = "mvf-theme";
 
 export function ThemeToggle() {
+  const { messages } = useLanguage();
   const [theme, setTheme] = useState<Theme>("light");
   const [mounted, setMounted] = useState(false);
 
@@ -67,11 +69,11 @@ export function ThemeToggle() {
       variant="outline"
       className="h-10 w-10 rounded-full !p-0"
       onClick={toggleTheme}
-      aria-label="Toggle color theme"
+      aria-label={messages.common.themeToggleAria}
       disabled={!mounted}
     >
       {icon}
-      <span className="sr-only">Toggle color theme</span>
+      <span className="sr-only">{messages.common.themeToggleAria}</span>
     </Button>
   );
 }
