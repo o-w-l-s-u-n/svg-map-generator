@@ -120,6 +120,7 @@ function formatAreaDegrees(area: number) {
 export function MapInterface() {
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [state, setState] = useState<DownloadState>({ status: "idle" });
+  const [preview, setPreview] = useState<string | null>(null);
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
   const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
@@ -135,6 +136,7 @@ export function MapInterface() {
 
       const geojson = await fetchOsmAsGeoJson(bounds);
       const svg = geoJsonToSvg(geojson, bounds);
+      setPreview(svg);
       const blob = new Blob([svg], { type: "image/svg+xml" });
       const url = URL.createObjectURL(blob);
 
@@ -186,7 +188,7 @@ export function MapInterface() {
           </div>
         </div>
 
-        <div className="w-full max-w-[320px] space-y-4">
+        <div className="w-full max-w-[360px] space-y-4">
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground">
             <p className="font-medium text-foreground">Current bounds</p>
             <p className="font-mono text-xs text-foreground/80">{formatBounds(bounds)}</p>
@@ -229,6 +231,24 @@ export function MapInterface() {
           </p>
         </div>
       </CardContent>
+      {preview && (
+        <div className="border-t border-border bg-card/70">
+          <div className="space-y-3 p-6">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-muted-foreground">Latest preview</p>
+              <span className="text-xs text-muted-foreground">
+                {state.status === "success" ? state.size : ""}
+              </span>
+            </div>
+            <div className="overflow-hidden rounded-lg border border-border bg-background/70">
+              <div
+                className="max-h-[420px] overflow-auto bg-slate-900/95 p-4"
+                dangerouslySetInnerHTML={{ __html: preview }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
       <CardFooter className="justify-end text-xs text-muted-foreground">
         SVG exports include roads, buildings, and points of interest present in the selected map
         window.
