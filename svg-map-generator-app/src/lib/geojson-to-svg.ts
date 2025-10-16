@@ -17,9 +17,17 @@ type Bounds = {
 
 interface ConversionOptions {
   width?: number;
+  zoom?: number;
+  strokeScale?: {
+    roads: number;
+    outlines: number;
+    water: number;
+    buildings: number;
+  };
 }
 
 const DEFAULT_WIDTH = 1024;
+const BASE_ZOOM = 13;
 
 type ProjectedPoint = [number, number];
 
@@ -157,6 +165,13 @@ export function geoJsonToSvg(
   options: ConversionOptions = {},
 ) {
   const width = options.width ?? DEFAULT_WIDTH;
+  const zoom = options.zoom ?? BASE_ZOOM;
+  const strokeScale = {
+    roads: options.strokeScale?.roads ?? 1,
+    outlines: options.strokeScale?.outlines ?? 1,
+    water: options.strokeScale?.water ?? 1,
+    buildings: options.strokeScale?.buildings ?? 1,
+  };
 
   const projection = prepareProjection(bounds, width);
 
@@ -203,14 +218,25 @@ export function geoJsonToSvg(
     }
   });
 
+  const zoomRatio = Math.max(zoom, 1) / BASE_ZOOM;
+
+  const scaleWidth = (base: number, min: number, max: number, multiplier: number) => {
+    const scaled = base * Math.pow(zoomRatio, 1.4) * multiplier;
+    return Math.min(Math.max(scaled, min), max);
+  };
+
+  const roadWidth = scaleWidth(1.6, 0.002, 3.0, strokeScale.roads);
+  const outlineWidth = scaleWidth(0.8, 0.0015, 1.4, strokeScale.outlines);
+  const waterStrokeWidth = scaleWidth(0.9, 0.01, 2.1, strokeScale.water);
+
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${projection.width.toFixed(0)}" height="${projection.height.toFixed(0)}" viewBox="0 0 ${projection.width.toFixed(2)} ${projection.height.toFixed(2)}">`,
     "<defs>",
     "<style>",
-    ".layer-water{fill:#38bdf829;stroke:#38bdf8;stroke-width:0.9;stroke-linejoin:round;}",
-    ".layer-buildings{fill:rgba(255,255,255,0);stroke:#1f2933;stroke-width:0.8;stroke-linejoin:round;}",
-    ".layer-roads{fill:rgba(255,255,255,0);stroke:#1e1b4b;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}",
-    ".layer-outlines{fill:none;stroke:#64748b;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;}",
+    `.layer-water{fill:#38bdf829;stroke:#38bdf8;stroke-width:${waterStrokeWidth.toFixed(2)};stroke-linejoin:round;}`,
+    `.layer-buildings{fill:rgba(255,255,255,0);stroke:#1f2933;stroke-width:${(outlineWidth * 0.4 * strokeScale.buildings).toFixed(2)};stroke-linejoin:round;}`,
+    `.layer-roads{fill:rgba(255,255,255,0);stroke:#1e1b4b;stroke-width:${roadWidth.toFixed(2)};stroke-linecap:round;stroke-linejoin:round;}`,
+    `.layer-outlines{fill:none;stroke:#64748b;stroke-width:${outlineWidth.toFixed(2)};stroke-linecap:round;stroke-linejoin:round;}`,
     "</style>",
     "</defs>",
     "<g class=\"layer-water\">",

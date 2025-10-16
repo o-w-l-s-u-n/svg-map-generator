@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SVG Map Generator",
-  description: "Select any OpenStreetMap viewport and export it as a vector-perfect SVG file.",
+  title: "OSM Vector Forge",
+  description: "Select any OpenStreetMap viewport, fine-tune stroke weights, and export a precision SVG.",
 };
 
 export default function RootLayout({

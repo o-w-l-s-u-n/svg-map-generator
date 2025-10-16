@@ -3,7 +3,7 @@
 import "leaflet/dist/leaflet.css";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MapContainer, TileLayer, useMapEvents } from "react-leaflet";
+import dynamic from "next/dynamic";
 import type { LatLngBounds } from "leaflet";
 import osmtogeojson from "osmtogeojson";
 import type { FeatureCollection } from "geojson";
@@ -44,7 +44,24 @@ function boundsArea(bounds: Bounds) {
   return Math.abs((bounds.north - bounds.south) * (bounds.east - bounds.west));
 }
 
-function LatLngTracker({ onChange }: { onChange: (bounds: Bounds) => void }) {
+const MapContainer = dynamic(
+  () => import("react-leaflet").then((mod) => mod.MapContainer),
+  { ssr: false },
+) as typeof import("react-leaflet").MapContainer;
+
+const TileLayer = dynamic(
+  () => import("react-leaflet").then((mod) => mod.TileLayer),
+  { ssr: false },
+) as typeof import("react-leaflet").TileLayer;
+
+function LatLngTracker({
+  onChange,
+  onZoom,
+}: {
+  onChange: (bounds: Bounds) => void;
+  onZoom?: (zoom: number) => void;
+}) {
+  const { useMapEvents } = require("react-leaflet") as typeof import("react-leaflet");
   const notify = useCallback(
     (mapBounds: LatLngBounds) => {
       const northEast = mapBounds.getNorthEast();
@@ -66,7 +83,16 @@ function LatLngTracker({ onChange }: { onChange: (bounds: Bounds) => void }) {
 
   useEffect(() => {
     notify(map.getBounds());
-  }, [map, notify]);
+    if (!onZoom) {
+      return;
+    }
+    onZoom(map.getZoom());
+    const handleZoom = () => onZoom(map.getZoom());
+    map.on("zoomend", handleZoom);
+    return () => {
+      map.off("zoomend", handleZoom);
+    };
+  }, [map, notify, onZoom]);
 
   return null;
 }
@@ -123,37 +149,48 @@ function formatAreaDegrees(area: number) {
   return `${area.toFixed(4)}°²`;
 }
 
+type StrokeControl = {
+  roads: number;
+  outlines: number;
+  water: number;
+  buildings: number;
+};
+
 export function MapInterface() {
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [state, setState] = useState<DownloadState>({ status: "idle" });
   const [preview, setPreview] = useState<string | null>(null);
+  const [mapZoom, setMapZoom] = useState(INITIAL_ZOOM);
+  const [strokeScale, setStrokeScale] = useState<StrokeControl>({
+    roads: 1,
+    outlines: 1,
+    water: 1,
+    buildings: 1,
+  });
+  const handleStrokeChange = useCallback((key: keyof StrokeControl, value: number) => {
+    setStrokeScale((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }, []);
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
   const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
 
-  const handleDownload = useCallback(async () => {
+  const handleGenerate = useCallback(async () => {
     if (!bounds) {
       setState({ status: "error", message: "Move the map to select a region first." });
       return;
     }
 
     try {
-      setState({ status: "loading" });
-
       const geojson = await fetchOsmAsGeoJson(bounds);
-      const svg = geoJsonToSvg(geojson, bounds);
+      const svg = geoJsonToSvg(geojson, bounds, {
+        zoom: mapZoom,
+        strokeScale,
+      });
       setPreview(svg);
-      const blob = new Blob([svg], { type: "image/svg+xml" });
-      const url = URL.createObjectURL(blob);
-
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "map-export.svg";
-      link.click();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-      const sizeKb = Math.max(blob.size / 1024, 0.1).toFixed(1);
-      setState({ status: "success", size: `${sizeKb} KB` });
+      setState({ status: "success", size: "preview" });
     } catch (error) {
       console.error(error);
       setState({
@@ -164,7 +201,7 @@ export function MapInterface() {
             : "Something went wrong while exporting the map.",
       });
     }
-  }, [bounds]);
+  }, [bounds, mapZoom, strokeScale]);
 
   return (
     <Card className="w-full max-w-6xl">
@@ -189,7 +226,10 @@ export function MapInterface() {
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               />
-              <LatLngTracker onChange={(next) => setBounds(next)} />
+              <LatLngTracker
+                onChange={(next) => setBounds(next)}
+                onZoom={(zoomLevel) => setMapZoom(zoomLevel)}
+              />
             </MapContainer>
           </div>
         </div>
@@ -211,23 +251,70 @@ export function MapInterface() {
             )}
           </div>
 
+          <div className="space-y-4 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-foreground">Stroke thickness</p>
+              <span className="text-xs text-muted-foreground">Adjust before exporting</span>
+            </div>
+            {([
+              ["roads", "Roads"],
+              ["outlines", "Outlines"],
+              ["water", "Water"],
+              ["buildings", "Buildings"],
+            ] as Array<[keyof StrokeControl, string]>).map(([key, label]) => (
+              <div key={key} className="space-y-1">
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{label}</span>
+                  <span className="font-mono text-foreground">{strokeScale[key].toFixed(2)}×</span>
+                </div>
+                <input
+                  aria-label={`${label} stroke scale`}
+                  className="h-1 w-full cursor-pointer appearance-none rounded bg-border"
+                  type="range"
+                  min={0.1}
+                  max={3}
+                  step={0.05}
+                  value={strokeScale[key]}
+                  onChange={(event) => handleStrokeChange(key, Number.parseFloat(event.target.value))}
+                />
+              </div>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              Smaller values produce finer lines; larger values create bolder strokes in the exported SVG.
+            </p>
+          </div>
+
           <Button
             className="w-full"
-            disabled={state.status === "loading" || !bounds || areaIsLarge}
-            onClick={handleDownload}
+            disabled={!bounds || areaIsLarge}
+            onClick={handleGenerate}
           >
-            {state.status === "loading" ? "Preparing SVG…" : "Download SVG"}
+            Generate preview
           </Button>
 
-          <div className="rounded-lg border border-border bg-background/60 p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Status</p>
-            {state.status === "idle" && <p>Export is ready when you are.</p>}
-            {state.status === "loading" && <p>Fetching OpenStreetMap data…</p>}
-            {state.status === "success" && (
-              <p className="text-emerald-600">SVG downloaded ({state.size}).</p>
-            )}
+          <div className="space-y-2 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
+            <p className="font-medium text-foreground">Generate & download</p>
+            <Button
+              className="w-full"
+              disabled={!preview}
+              onClick={() => {
+                if (!preview) return;
+                const blob = new Blob([preview], { type: "image/svg+xml" });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = "map-export.svg";
+                link.click();
+                window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+              }}
+            >
+              Download SVG
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              Adjust sliders to update the preview before downloading.
+            </p>
             {state.status === "error" && (
-              <p className="text-rose-600">{state.message}</p>
+              <p className="text-rose-600 text-xs">{state.message}</p>
             )}
           </div>
 
