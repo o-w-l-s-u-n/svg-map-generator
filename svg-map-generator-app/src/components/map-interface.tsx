@@ -125,13 +125,17 @@ export function MapInterface() {
     water: 1,
     buildings: 1,
   });
+  const [previewDirty, setPreviewDirty] = useState(true);
   const handleStrokeChange = useCallback((key: keyof StrokeControl, value: number) => {
     setStrokeScale((current) => ({
       ...current,
       [key]: value,
     }));
+    setPreviewDirty(true);
+    setPreviewRenderStatus("idle");
+    setPreviewRenderError(null);
+    setPreviewPng(null);
   }, []);
-  const lastParamsRef = useRef<{ zoom: number; stroke: StrokeControl } | null>(null);
   const [previewPng, setPreviewPng] = useState<string | null>(null);
   const [previewRenderStatus, setPreviewRenderStatus] = useState<
     "idle" | "rendering" | "ready" | "error"
@@ -139,11 +143,27 @@ export function MapInterface() {
   const [previewRenderError, setPreviewRenderError] = useState<string | null>(null);
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
-  const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
+const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
 
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
+useEffect(() => {
+  setIsClient(true);
+}, []);
+
+const handleBoundsUpdate = useCallback((next: Bounds) => {
+  setBounds(next);
+  setPreviewDirty(true);
+  setPreviewRenderStatus("idle");
+  setPreviewRenderError(null);
+  setPreviewPng(null);
+}, []);
+
+const handleZoomUpdate = useCallback((zoomLevel: number) => {
+  setMapZoom(zoomLevel);
+  setPreviewDirty(true);
+  setPreviewRenderStatus("idle");
+  setPreviewRenderError(null);
+  setPreviewPng(null);
+}, []);
 
   const handleGenerate = useCallback(async () => {
     if (!bounds) {
@@ -153,6 +173,7 @@ export function MapInterface() {
 
     try {
       setState({ status: "loading" });
+      setPreviewDirty(true);
       setPreviewRenderStatus("rendering");
       setPreviewRenderError(null);
 
@@ -175,10 +196,7 @@ export function MapInterface() {
 
       const { svg } = (await response.json()) as { svg: string };
       setPreview(svg);
-      lastParamsRef.current = {
-        zoom: mapZoom,
-        stroke: { ...strokeScale },
-      };
+      setPreviewDirty(false);
       setState({ status: "success", size: "preview" });
     } catch (error) {
       console.error(error);
@@ -194,24 +212,9 @@ export function MapInterface() {
       setPreviewRenderError(
         error instanceof Error ? error.message : "Unable to generate preview.",
       );
-      lastParamsRef.current = {
-        zoom: mapZoom,
-        stroke: { ...strokeScale },
-      };
-    }
-  }, [bounds, mapZoom, strokeScale]);
-
-  useEffect(() => {
-    if (!preview || state.status === "loading") {
-      return;
-    }
-    const last = lastParamsRef.current;
-    const currentSignature = JSON.stringify(strokeScale);
-    const lastSignature = last ? JSON.stringify(last.stroke) : null;
-    if (!last || last.zoom !== mapZoom || lastSignature !== currentSignature) {
-      handleGenerate();
-    }
-  }, [strokeScale, mapZoom, preview, handleGenerate, state.status]);
+      setPreviewDirty(true);
+  }
+}, [bounds, mapZoom, strokeScale]);
 
   useEffect(() => {
     if (!preview) {
@@ -300,10 +303,7 @@ export function MapInterface() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <LatLngTracker
-                  onChange={(next) => setBounds(next)}
-                  onZoom={(zoomLevel) => setMapZoom(zoomLevel)}
-                />
+                <LatLngTracker onChange={handleBoundsUpdate} onZoom={handleZoomUpdate} />
               </MapContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -321,7 +321,7 @@ export function MapInterface() {
                 </span>
               )}
             </div>
-            <div className="flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border bg-slate-900/95 p-4">
+            <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border bg-slate-900/95 p-4">
               {previewRenderStatus === "rendering" && (
                 <p className="text-xs text-muted-foreground">Rendering PNG preview…</p>
               )}
