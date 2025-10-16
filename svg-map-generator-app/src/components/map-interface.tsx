@@ -426,7 +426,7 @@ export function MapInterface() {
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
-          <div className="relative h-[420px] w-full overflow-hidden rounded-lg border">
+          <div className="relative h-[420px] w-full overflow-hidden rounded-lg border-none">
             {isClient && (
               <div className="pointer-events-none absolute right-4 top-4 z-[500] w-full max-w-[320px]">
                 <form
@@ -500,7 +500,7 @@ export function MapInterface() {
                 </span>
               )}
             </div>
-            <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border bg-slate-900/95 p-4">
+            <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border">
               {previewRenderStatus === "rendering" && (
                 <p className="text-xs text-muted-foreground">
                   Rendering PNG preview…
@@ -515,7 +515,7 @@ export function MapInterface() {
                 <img
                   src={previewPng}
                   alt="Map preview"
-                  className="max-h-[360px] w-full rounded-md object-contain shadow-sm"
+                  className="max-h-[360px] w-full rounded-md object-cover"
                 />
               )}
               {previewRenderStatus === "idle" && (
@@ -608,7 +608,7 @@ export function MapInterface() {
               3. Download the SVG
             </p>
             <Button
-              className="w-full"
+              className="w-full !bg-green-500 disabled:!bg-primary"
               disabled={
                 !preview || previewRenderStatus !== "ready" || previewDirty
               }
@@ -636,17 +636,17 @@ export function MapInterface() {
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground">
+          {/* <p className="text-xs text-muted-foreground">
             Powered by the public Overpass API. For production use, consider
             hosting your own Overpass instance or caching requests to stay
             within usage policies.
-          </p>
+          </p> */}
         </div>
       </CardContent>
-      <CardFooter className="justify-end text-xs text-muted-foreground">
+      {/* <CardFooter className="justify-end text-xs text-muted-foreground">
         SVG exports include roads, buildings, and points of interest present in
         the selected map window.
-      </CardFooter>
+      </CardFooter> */}
     </Card>
   );
 }
