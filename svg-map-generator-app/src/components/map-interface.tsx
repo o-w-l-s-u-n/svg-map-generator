@@ -117,6 +117,7 @@ export function MapInterface() {
   const [bounds, setBounds] = useState<Bounds | null>(null);
   const [state, setState] = useState<DownloadState>({ status: "idle" });
   const [preview, setPreview] = useState<string | null>(null);
+  const [isClient, setIsClient] = useState(false);
   const [mapZoom, setMapZoom] = useState(INITIAL_ZOOM);
   const [strokeScale, setStrokeScale] = useState<StrokeControl>({
     roads: 1,
@@ -139,6 +140,10 @@ export function MapInterface() {
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
   const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   const handleGenerate = useCallback(async () => {
     if (!bounds) {
@@ -279,30 +284,69 @@ export function MapInterface() {
           Pan and zoom to the area you want, then download an SVG vector snapshot of the data.
         </CardDescription>
       </CardHeader>
-      <CardContent className="flex flex-col gap-6 lg:flex-row">
-        <div className="flex-1">
+      <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
           <div className="h-[420px] w-full overflow-hidden rounded-lg border">
-            <MapContainer
-              center={INITIAL_CENTER}
-              zoom={INITIAL_ZOOM}
-              style={{ height: "100%", width: "100%" }}
-              minZoom={5}
-              maxZoom={19}
-              scrollWheelZoom
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <LatLngTracker
-                onChange={(next) => setBounds(next)}
-                onZoom={(zoomLevel) => setMapZoom(zoomLevel)}
-              />
-            </MapContainer>
+            {isClient ? (
+              <MapContainer
+                center={INITIAL_CENTER}
+                zoom={INITIAL_ZOOM}
+                style={{ height: "100%", width: "100%" }}
+                minZoom={5}
+                maxZoom={19}
+                scrollWheelZoom
+              >
+                <TileLayer
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                />
+                <LatLngTracker
+                  onChange={(next) => setBounds(next)}
+                  onZoom={(zoomLevel) => setMapZoom(zoomLevel)}
+                />
+              </MapContainer>
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                Loading map…
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border bg-card/70 p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-foreground">Preview</p>
+              {previewRenderStatus === "ready" && (
+                <span className="text-xs text-muted-foreground">
+                  {mapZoom.toFixed(2)}× zoom
+                </span>
+              )}
+            </div>
+            <div className="flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border bg-slate-900/95 p-4">
+              {previewRenderStatus === "rendering" && (
+                <p className="text-xs text-muted-foreground">Rendering PNG preview…</p>
+              )}
+              {previewRenderStatus === "error" && (
+                <p className="text-xs text-rose-500">
+                  {previewRenderError ?? "Unable to render preview."}
+                </p>
+              )}
+              {previewRenderStatus === "ready" && previewPng && (
+                <img
+                  src={previewPng}
+                  alt="Map preview"
+                  className="max-h-[360px] w-full rounded-md object-contain shadow-sm"
+                />
+              )}
+              {previewRenderStatus === "idle" && (
+                <p className="text-xs text-muted-foreground">
+                  Generate a preview to see a raster approximation of the SVG.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
-        <div className="w-full max-w-[360px] space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground">
             <p className="font-medium text-foreground">Current bounds</p>
             <p className="font-mono text-xs text-foreground/80">{formatBounds(bounds)}</p>
@@ -320,9 +364,11 @@ export function MapInterface() {
           </div>
 
           <div className="space-y-4 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
-            <div className="flex items-center justify-between">
-              <p className="font-medium text-foreground">Stroke thickness</p>
-              <span className="text-xs text-muted-foreground">Adjust before exporting</span>
+            <div>
+              <p className="text-sm font-medium text-foreground">1. Tune stroke thickness</p>
+              <p className="text-xs text-muted-foreground">
+                Smaller values produce finer lines; larger values create bolder strokes in the exported SVG.
+              </p>
             </div>
             {([
               ["roads", "Roads"],
@@ -347,21 +393,24 @@ export function MapInterface() {
                 />
               </div>
             ))}
-            <p className="text-xs text-muted-foreground">
-              Smaller values produce finer lines; larger values create bolder strokes in the exported SVG.
-            </p>
           </div>
 
-          <Button
-            className="w-full"
-            disabled={!bounds || areaIsLarge || state.status === "loading"}
-            onClick={handleGenerate}
-          >
-            {state.status === "loading" ? "Generating…" : "Generate preview"}
-          </Button>
+          <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
+            <p className="text-sm font-medium text-foreground">2. Generate a fresh preview</p>
+            <Button
+              className="w-full"
+              disabled={!bounds || areaIsLarge || state.status === "loading"}
+              onClick={handleGenerate}
+            >
+              {state.status === "loading" ? "Generating…" : "Generate preview"}
+            </Button>
+            {state.status === "error" && (
+              <p className="text-xs text-rose-600">{state.message}</p>
+            )}
+          </div>
 
-          <div className="space-y-2 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
-            <p className="font-medium text-foreground">Generate & download</p>
+          <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
+            <p className="text-sm font-medium text-foreground">3. Download the SVG</p>
             <Button
               className="w-full"
               disabled={!preview || previewRenderStatus !== "ready"}
@@ -379,11 +428,8 @@ export function MapInterface() {
               Download SVG
             </Button>
             <p className="text-xs text-muted-foreground">
-              Adjust sliders to update the preview before downloading.
+              The download always uses the full-resolution SVG returned by the server.
             </p>
-            {state.status === "error" && (
-              <p className="text-rose-600 text-xs">{state.message}</p>
-            )}
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -392,37 +438,6 @@ export function MapInterface() {
           </p>
         </div>
       </CardContent>
-      {preview && (
-        <div className="border-t border-border bg-card/70">
-          <div className="space-y-3 p-6">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium text-muted-foreground">Latest preview</p>
-              <span className="text-xs text-muted-foreground">
-                {previewRenderStatus === "ready" ? `${mapZoom.toFixed(2)}× zoom` : ""}
-              </span>
-            </div>
-            <div className="overflow-hidden rounded-lg border border-border bg-background/70">
-              <div className="flex min-h-[220px] items-center justify-center bg-slate-900/95 p-4">
-                {previewRenderStatus === "rendering" && (
-                  <p className="text-xs text-muted-foreground">Rendering PNG preview…</p>
-                )}
-                {previewRenderStatus === "error" && (
-                  <p className="text-xs text-rose-500">
-                    {previewRenderError ?? "Unable to render preview."}
-                  </p>
-                )}
-                {previewRenderStatus === "ready" && previewPng && (
-                  <img
-                    src={previewPng}
-                    alt="Map preview"
-                    className="max-h-[360px] w-full rounded-md object-contain"
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       <CardFooter className="justify-end text-xs text-muted-foreground">
         SVG exports include roads, buildings, and points of interest present in the selected map
         window.
