@@ -16,6 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 
 type Bounds = {
   north: number;
@@ -563,24 +564,25 @@ export function MapInterface() {
                 exported map features.
               </p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Outlines</span>
                 <span className="font-mono text-foreground">
                   {strokeScale.outlines.toFixed(2)}×
                 </span>
               </div>
-              <input
+              <Slider
                 aria-label="Outlines stroke scale"
-                className="h-1 w-full cursor-pointer appearance-none rounded bg-border"
-                type="range"
                 min={0.1}
                 max={3}
                 step={0.05}
-                value={strokeScale.outlines}
-                onChange={(event) =>
-                  handleOutlineChange(Number.parseFloat(event.target.value))
-                }
+                value={[strokeScale.outlines]}
+                onValueChange={(values) => {
+                  const [next] = values;
+                  if (typeof next === "number" && Number.isFinite(next)) {
+                    handleOutlineChange(next);
+                  }
+                }}
               />
             </div>
           </div>
