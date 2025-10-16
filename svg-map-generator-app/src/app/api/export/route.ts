@@ -17,7 +17,7 @@ type StrokeScalePayload = {
   buildings?: number;
 };
 
-function buildQuery(bounds: BoundsPayload) {
+function buildBoundsQuery(bounds: BoundsPayload) {
   const bbox = `${bounds.south},${bounds.west},${bounds.north},${bounds.east}`;
   return `
 [out:json][timeout:25];
@@ -37,25 +37,107 @@ out skel qt;
 `.trim();
 }
 
+function buildSearchQuery(query: string) {
+  const params = new URLSearchParams({
+    q: query,
+    format: "jsonv2",
+    addressdetails: "0",
+    polygon_geojson: "0",
+    limit: "1",
+  });
+  return params.toString();
+}
+
 export async function POST(request: Request) {
   try {
-    const { bounds, zoom, strokeScale } = (await request.json()) as {
+    const { bounds, zoom, strokeScale, search } = (await request.json()) as {
       bounds?: BoundsPayload;
       zoom?: number;
       strokeScale?: StrokeScalePayload;
+      search?: { query?: string };
     };
 
+    let effectiveBounds = bounds;
+    let searchInfo: { displayName?: string; bounds?: BoundsPayload } | undefined;
+
+    if (search?.query) {
+      const searchResponse = await fetch(
+        `https://nominatim.openstreetmap.org/search?${buildSearchQuery(search.query)}`,
+        {
+          headers: {
+            "User-Agent": "map-vector-forge-studio/1.0 (no-reply@example.com)",
+          },
+        },
+      );
+
+      if (!searchResponse.ok) {
+        return NextResponse.json(
+          { error: `Search error: ${searchResponse.statusText}` },
+          { status: 502 },
+        );
+      }
+      const searchResults = (await searchResponse.json()) as Array<{
+        boundingbox?: [string, string, string, string];
+        lat?: string;
+        lon?: string;
+        display_name?: string;
+      }>;
+
+      const topHit = searchResults?.[0];
+      if (!topHit) {
+        return NextResponse.json(
+          { error: "No matching locations were found for the provided query." },
+          { status: 404 },
+        );
+      }
+
+      if (topHit.boundingbox && topHit.boundingbox.length === 4) {
+        const [south, north, west, east] = topHit.boundingbox.map((value) =>
+          Number.parseFloat(value),
+        );
+        if (
+          [south, north, west, east].every(
+            (value) => typeof value === "number" && Number.isFinite(value),
+          )
+        ) {
+          effectiveBounds = { south, north, west, east };
+          searchInfo = {
+            displayName: topHit.display_name,
+            bounds: effectiveBounds,
+          };
+        }
+      }
+
+      if (!effectiveBounds && topHit.lat && topHit.lon) {
+        const lat = Number.parseFloat(topHit.lat);
+        const lon = Number.parseFloat(topHit.lon);
+        if (Number.isFinite(lat) && Number.isFinite(lon)) {
+          const delta = 0.01;
+          effectiveBounds = {
+            south: lat - delta,
+            north: lat + delta,
+            west: lon - delta,
+            east: lon + delta,
+          };
+          searchInfo = {
+            displayName: topHit.display_name,
+            bounds: effectiveBounds,
+          };
+        }
+      }
+    }
+
     if (
-      !bounds ||
-      typeof bounds.north !== "number" ||
-      typeof bounds.south !== "number" ||
-      typeof bounds.east !== "number" ||
-      typeof bounds.west !== "number"
+      !effectiveBounds ||
+      typeof effectiveBounds.north !== "number" ||
+      typeof effectiveBounds.south !== "number" ||
+      typeof effectiveBounds.east !== "number" ||
+      typeof effectiveBounds.west !== "number"
     ) {
       return NextResponse.json({ error: "Invalid bounds payload." }, { status: 400 });
     }
 
-    const query = buildQuery(bounds);
+    const query = buildBoundsQuery(effectiveBounds);
     const response = await fetch("https://overpass-api.de/api/interpreter", {
       method: "POST",
       headers: {
@@ -73,7 +155,7 @@ export async function POST(request: Request) {
 
     const data = await response.json();
     const geojson = osmtogeojson(data);
-    const svg = geoJsonToSvg(geojson, bounds, {
+    const svg = geoJsonToSvg(geojson, effectiveBounds, {
       zoom,
       strokeScale: {
         roads: strokeScale?.roads ?? 1,
@@ -83,7 +165,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ svg });
+    return NextResponse.json({ svg, bounds: effectiveBounds, searchInfo });
   } catch (error) {
     console.error("Failed to generate SVG:", error);
     return NextResponse.json(

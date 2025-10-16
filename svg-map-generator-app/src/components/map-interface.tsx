@@ -3,6 +3,7 @@
 import "leaflet/dist/leaflet.css";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import dynamic from "next/dynamic";
 import type { LatLngBounds } from "leaflet";
 import {
@@ -38,13 +39,34 @@ function boundsArea(bounds: Bounds) {
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
-  { ssr: false },
+  { ssr: false }
 ) as typeof import("react-leaflet").MapContainer;
 
 const TileLayer = dynamic(
   () => import("react-leaflet").then((mod) => mod.TileLayer),
-  { ssr: false },
+  { ssr: false }
 ) as typeof import("react-leaflet").TileLayer;
+
+function MapController({
+  center,
+  zoom,
+}: {
+  center: [number, number];
+  zoom: number;
+}) {
+  const { useMap } = require("react-leaflet") as typeof import("react-leaflet");
+  const map = useMap();
+  useEffect(() => {
+    const current = map.getCenter();
+    const latDiff = Math.abs(current.lat - center[0]);
+    const lngDiff = Math.abs(current.lng - center[1]);
+    const zoomDiff = Math.abs(map.getZoom() - zoom);
+    if (latDiff > 1e-6 || lngDiff > 1e-6 || zoomDiff > 0.01) {
+      map.setView(center, zoom, { animate: true });
+    }
+  }, [map, center, zoom]);
+  return null;
+}
 
 function LatLngTracker({
   onChange,
@@ -53,7 +75,8 @@ function LatLngTracker({
   onChange: (bounds: Bounds) => void;
   onZoom?: (zoom: number) => void;
 }) {
-  const { useMapEvents } = require("react-leaflet") as typeof import("react-leaflet");
+  const { useMapEvents } =
+    require("react-leaflet") as typeof import("react-leaflet");
   const notify = useCallback(
     (mapBounds: LatLngBounds) => {
       const northEast = mapBounds.getNorthEast();
@@ -65,7 +88,7 @@ function LatLngTracker({
         west: southWest.lng,
       });
     },
-    [onChange],
+    [onChange]
   );
 
   const map = useMapEvents({
@@ -94,9 +117,9 @@ function formatBounds(bounds: Bounds | null) {
     return "Adjust the map to choose a region.";
   }
 
-  return `N:${bounds.north.toFixed(5)}  S:${bounds.south.toFixed(5)}  E:${bounds.east.toFixed(
-    5,
-  )}  W:${bounds.west.toFixed(5)}`;
+  return `N:${bounds.north.toFixed(5)}  S:${bounds.south.toFixed(
+    5
+  )}  E:${bounds.east.toFixed(5)}  W:${bounds.west.toFixed(5)}`;
 }
 
 function formatAreaDegrees(area: number) {
@@ -119,6 +142,7 @@ export function MapInterface() {
   const [preview, setPreview] = useState<string | null>(null);
   const [isClient, setIsClient] = useState(false);
   const [mapZoom, setMapZoom] = useState(INITIAL_ZOOM);
+  const [mapCenter, setMapCenter] = useState<[number, number]>(INITIAL_CENTER);
   const [strokeScale, setStrokeScale] = useState<StrokeControl>({
     roads: 1,
     outlines: 1,
@@ -126,48 +150,159 @@ export function MapInterface() {
     buildings: 1,
   });
   const [previewDirty, setPreviewDirty] = useState(true);
-  const handleStrokeChange = useCallback((key: keyof StrokeControl, value: number) => {
-    setStrokeScale((current) => ({
-      ...current,
-      [key]: value,
-    }));
+  const suppressBoundsUpdate = useRef(0);
+  const handleStrokeChange = useCallback(
+    (key: keyof StrokeControl, value: number) => {
+      setStrokeScale((current) => ({
+        ...current,
+        [key]: value,
+      }));
+      setPreviewDirty(true);
+      setPreviewRenderStatus("idle");
+      setPreviewRenderError(null);
+      setPreviewPng(null);
+    },
+    []
+  );
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [previewPng, setPreviewPng] = useState<string | null>(null);
+  const [previewRenderStatus, setPreviewRenderStatus] = useState<
+    "idle" | "rendering" | "ready" | "error"
+  >("idle");
+  const [previewRenderError, setPreviewRenderError] = useState<string | null>(
+    null
+  );
+
+  const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
+  const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  const handleBoundsUpdate = useCallback((next: Bounds) => {
+    setBounds(next);
+    const center: [number, number] = [
+      (next.south + next.north) / 2,
+      (next.west + next.east) / 2,
+    ];
+    setMapCenter(center);
+    if (suppressBoundsUpdate.current > 0) {
+      suppressBoundsUpdate.current -= 1;
+      return;
+    }
     setPreviewDirty(true);
     setPreviewRenderStatus("idle");
     setPreviewRenderError(null);
     setPreviewPng(null);
   }, []);
-  const [previewPng, setPreviewPng] = useState<string | null>(null);
-  const [previewRenderStatus, setPreviewRenderStatus] = useState<
-    "idle" | "rendering" | "ready" | "error"
-  >("idle");
-  const [previewRenderError, setPreviewRenderError] = useState<string | null>(null);
 
-  const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
-const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
+  const handleZoomUpdate = useCallback((zoomLevel: number) => {
+    setMapZoom(zoomLevel);
+    if (suppressBoundsUpdate.current > 0) {
+      suppressBoundsUpdate.current -= 1;
+      return;
+    }
+    setPreviewDirty(true);
+    setPreviewRenderStatus("idle");
+    setPreviewRenderError(null);
+    setPreviewPng(null);
+  }, []);
 
-useEffect(() => {
-  setIsClient(true);
-}, []);
-
-const handleBoundsUpdate = useCallback((next: Bounds) => {
-  setBounds(next);
-  setPreviewDirty(true);
-  setPreviewRenderStatus("idle");
-  setPreviewRenderError(null);
-  setPreviewPng(null);
-}, []);
-
-const handleZoomUpdate = useCallback((zoomLevel: number) => {
-  setMapZoom(zoomLevel);
-  setPreviewDirty(true);
-  setPreviewRenderStatus("idle");
-  setPreviewRenderError(null);
-  setPreviewPng(null);
-}, []);
+  const handleSearch = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const query = searchQuery.trim();
+      if (!query) {
+        setSearchError("Enter a place or address to search.");
+        return;
+      }
+      try {
+        setSearchLoading(true);
+        setSearchError(null);
+        const response = await fetch(
+          `/api/search?q=${encodeURIComponent(query)}`
+        );
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(payload?.error ?? "Unable to find that location.");
+        }
+        const {
+          bounds: foundBounds,
+          center,
+          zoom,
+          displayName,
+        } = (await response.json()) as {
+          bounds?: Bounds;
+          center?: [number, number];
+          zoom?: number;
+          displayName?: string;
+        };
+        if (displayName) {
+          setSearchQuery(displayName);
+        }
+        if (foundBounds) {
+          suppressBoundsUpdate.current = 4;
+          setBounds(foundBounds);
+          setPreviewDirty(true);
+          setPreviewRenderStatus("idle");
+          setPreviewRenderError(null);
+          setPreviewPng(null);
+          const south = Math.min(foundBounds.south, foundBounds.north);
+          const north = Math.max(foundBounds.south, foundBounds.north);
+          const west = Math.min(foundBounds.west, foundBounds.east);
+          const east = Math.max(foundBounds.west, foundBounds.east);
+          const computedCenter: [number, number] = [
+            (south + north) / 2,
+            (west + east) / 2,
+          ];
+          setMapCenter(center ?? computedCenter);
+          if (typeof zoom === "number" && Number.isFinite(zoom)) {
+            setMapZoom(zoom);
+          } else {
+            const latDiff = Math.abs(north - south);
+            const lngDiff = Math.abs(east - west);
+            const approximateZoom = Math.max(
+              5,
+              Math.min(
+                19,
+                Math.floor(
+                  12 - Math.log(Math.max(latDiff, lngDiff) + 1e-6) * 1.4
+                )
+              )
+            );
+            setMapZoom(approximateZoom);
+          }
+        } else if (center) {
+          suppressBoundsUpdate.current = 2;
+          setMapCenter(center);
+          setPreviewDirty(true);
+          setPreviewRenderStatus("idle");
+          setPreviewRenderError(null);
+          setPreviewPng(null);
+        }
+      } catch (error) {
+        console.error(error);
+        setSearchError(
+          error instanceof Error
+            ? error.message
+            : "Unexpected error performing search."
+        );
+      } finally {
+        setSearchLoading(false);
+      }
+    },
+    [searchQuery]
+  );
 
   const handleGenerate = useCallback(async () => {
     if (!bounds) {
-      setState({ status: "error", message: "Move the map to select a region first." });
+      setState({
+        status: "error",
+        message: "Move the map to select a region first.",
+      });
       return;
     }
 
@@ -194,7 +329,32 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
         throw new Error(payload?.error ?? "Failed to generate SVG preview.");
       }
 
-      const { svg } = (await response.json()) as { svg: string };
+      const { svg, bounds: updatedBounds } = (await response.json()) as {
+        svg: string;
+        bounds?: Bounds;
+      };
+
+      // if (updatedBounds) {
+      //   suppressBoundsUpdate.current = 4;
+      //   setBounds(updatedBounds);
+      //   const south = Math.min(updatedBounds.south, updatedBounds.north);
+      //   const north = Math.max(updatedBounds.south, updatedBounds.north);
+      //   const west = Math.min(updatedBounds.west, updatedBounds.east);
+      //   const east = Math.max(updatedBounds.west, updatedBounds.east);
+      //   const center: [number, number] = [
+      //     (south + north) / 2,
+      //     (west + east) / 2,
+      //   ];
+      //   const latDiff = Math.abs(north - south);
+      //   const lngDiff = Math.abs(east - west);
+      //   const approximateZoom = Math.max(
+      //     5,
+      //     Math.min(19, Math.floor(12 - Math.log(Math.max(latDiff, lngDiff) + 1e-6) * 1.4)),
+      //   );
+      //   setMapCenter(center);
+      //   setMapZoom(approximateZoom);
+      // }
+
       setPreview(svg);
       setPreviewDirty(false);
       setState({ status: "success", size: "preview" });
@@ -210,11 +370,11 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
       setPreviewRenderStatus("error");
       setPreviewPng(null);
       setPreviewRenderError(
-        error instanceof Error ? error.message : "Unable to generate preview.",
+        error instanceof Error ? error.message : "Unable to generate preview."
       );
       setPreviewDirty(true);
-  }
-}, [bounds, mapZoom, strokeScale]);
+    }
+  }, [bounds, mapZoom, strokeScale]);
 
   useEffect(() => {
     if (!preview) {
@@ -244,7 +404,10 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
       let targetHeight = naturalHeight;
       if (targetWidth > maxWidth) {
         targetWidth = maxWidth;
-        targetHeight = Math.max(1, Math.round((maxWidth / naturalWidth) * naturalHeight));
+        targetHeight = Math.max(
+          1,
+          Math.round((maxWidth / naturalWidth) * naturalHeight)
+        );
       }
       const canvas = document.createElement("canvas");
       canvas.width = targetWidth;
@@ -284,7 +447,8 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
       <CardHeader>
         <CardTitle>OpenStreetMap SVG Export</CardTitle>
         <CardDescription>
-          Pan and zoom to the area you want, then download an SVG vector snapshot of the data.
+          Pan and zoom to the area you want, then download an SVG vector
+          snapshot of the data.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -292,8 +456,8 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
           <div className="h-[420px] w-full overflow-hidden rounded-lg border">
             {isClient ? (
               <MapContainer
-                center={INITIAL_CENTER}
-                zoom={INITIAL_ZOOM}
+                center={mapCenter}
+                zoom={mapZoom}
                 style={{ height: "100%", width: "100%" }}
                 minZoom={5}
                 maxZoom={19}
@@ -303,7 +467,11 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <LatLngTracker onChange={handleBoundsUpdate} onZoom={handleZoomUpdate} />
+                <MapController center={mapCenter} zoom={mapZoom} />
+                <LatLngTracker
+                  onChange={handleBoundsUpdate}
+                  onZoom={handleZoomUpdate}
+                />
               </MapContainer>
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -323,7 +491,9 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
             </div>
             <div className="relative flex min-h-[240px] items-center justify-center overflow-hidden rounded-md border border-border bg-slate-900/95 p-4">
               {previewRenderStatus === "rendering" && (
-                <p className="text-xs text-muted-foreground">Rendering PNG preview…</p>
+                <p className="text-xs text-muted-foreground">
+                  Rendering PNG preview…
+                </p>
               )}
               {previewRenderStatus === "error" && (
                 <p className="text-xs text-rose-500">
@@ -342,44 +512,100 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
                   Generate a preview to see a raster approximation of the SVG.
                 </p>
               )}
+              {previewDirty && previewRenderStatus === "ready" && (
+                <div className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2 py-1 text-[11px] text-white">
+                  Preview out of date — run "Generate preview" again.
+                </div>
+              )}
             </div>
           </div>
         </div>
 
         <div className="space-y-4">
+          <form
+            className="space-y-2 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground"
+            onSubmit={handleSearch}
+          >
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-foreground">Search the map</p>
+              <span className="text-xs text-muted-foreground">
+                Enter a place name
+              </span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+                placeholder="Search cities, addresses, landmarks…"
+                value={searchQuery}
+                onChange={(event) => {
+                  setSearchQuery(event.target.value);
+                  if (searchError) {
+                    setSearchError(null);
+                  }
+                }}
+                disabled={searchLoading}
+              />
+              <Button
+                type="submit"
+                disabled={searchLoading || !isClient || !searchQuery.trim()}
+              >
+                {searchLoading ? "Searching…" : "Search"}
+              </Button>
+            </div>
+            {searchError && (
+              <p className="text-xs text-rose-600">{searchError}</p>
+            )}
+            <p className="text-xs text-muted-foreground">
+              We use OpenStreetMap’s Nominatim to locate places and adjust the
+              map view for you.
+            </p>
+          </form>
+
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground">
             <p className="font-medium text-foreground">Current bounds</p>
-            <p className="font-mono text-xs text-foreground/80">{formatBounds(bounds)}</p>
+            <p className="font-mono text-xs text-foreground/80">
+              {formatBounds(bounds)}
+            </p>
             {bounds && (
               <p>
                 Approximate area:{" "}
-                <span className="font-medium text-foreground">{formatAreaDegrees(area)}</span>
+                <span className="font-medium text-foreground">
+                  {formatAreaDegrees(area)}
+                </span>
               </p>
             )}
             {areaIsLarge && (
               <p className="text-xs text-amber-500">
-                Tip: Zoom in further to avoid slow Overpass responses and enormous SVG files.
+                Tip: Zoom in further to avoid slow Overpass responses and
+                enormous SVG files.
               </p>
             )}
           </div>
 
           <div className="space-y-4 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <div>
-              <p className="text-sm font-medium text-foreground">1. Tune stroke thickness</p>
+              <p className="text-sm font-medium text-foreground">
+                1. Tune stroke thickness
+              </p>
               <p className="text-xs text-muted-foreground">
-                Smaller values produce finer lines; larger values create bolder strokes in the exported SVG.
+                Smaller values produce finer lines; larger values create bolder
+                strokes in the exported SVG.
               </p>
             </div>
-            {([
-              ["roads", "Roads"],
-              ["outlines", "Outlines"],
-              ["water", "Water"],
-              ["buildings", "Buildings"],
-            ] as Array<[keyof StrokeControl, string]>).map(([key, label]) => (
+            {(
+              [
+                ["roads", "Roads"],
+                ["outlines", "Outlines"],
+                ["water", "Water"],
+                ["buildings", "Buildings"],
+              ] as Array<[keyof StrokeControl, string]>
+            ).map(([key, label]) => (
               <div key={key} className="space-y-1">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>{label}</span>
-                  <span className="font-mono text-foreground">{strokeScale[key].toFixed(2)}×</span>
+                  <span className="font-mono text-foreground">
+                    {strokeScale[key].toFixed(2)}×
+                  </span>
                 </div>
                 <input
                   aria-label={`${label} stroke scale`}
@@ -389,14 +615,21 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
                   max={3}
                   step={0.05}
                   value={strokeScale[key]}
-                  onChange={(event) => handleStrokeChange(key, Number.parseFloat(event.target.value))}
+                  onChange={(event) =>
+                    handleStrokeChange(
+                      key,
+                      Number.parseFloat(event.target.value)
+                    )
+                  }
                 />
               </div>
             ))}
           </div>
 
           <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
-            <p className="text-sm font-medium text-foreground">2. Generate a fresh preview</p>
+            <p className="text-sm font-medium text-foreground">
+              2. Generate a fresh preview
+            </p>
             <Button
               className="w-full"
               disabled={!bounds || areaIsLarge || state.status === "loading"}
@@ -410,10 +643,14 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
           </div>
 
           <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
-            <p className="text-sm font-medium text-foreground">3. Download the SVG</p>
+            <p className="text-sm font-medium text-foreground">
+              3. Download the SVG
+            </p>
             <Button
               className="w-full"
-              disabled={!preview || previewRenderStatus !== "ready"}
+              disabled={
+                !preview || previewRenderStatus !== "ready" || previewDirty
+              }
               onClick={() => {
                 if (!preview) return;
                 const blob = new Blob([preview], { type: "image/svg+xml" });
@@ -428,19 +665,26 @@ const handleZoomUpdate = useCallback((zoomLevel: number) => {
               Download SVG
             </Button>
             <p className="text-xs text-muted-foreground">
-              The download always uses the full-resolution SVG returned by the server.
+              The download always uses the full-resolution SVG returned by the
+              server.
             </p>
+            {previewDirty && previewRenderStatus === "ready" && (
+              <p className="text-xs text-amber-500">
+                The preview changed. Generate a new preview before downloading.
+              </p>
+            )}
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Powered by the public Overpass API. For production use, consider hosting your own
-            Overpass instance or caching requests to stay within usage policies.
+            Powered by the public Overpass API. For production use, consider
+            hosting your own Overpass instance or caching requests to stay
+            within usage policies.
           </p>
         </div>
       </CardContent>
       <CardFooter className="justify-end text-xs text-muted-foreground">
-        SVG exports include roads, buildings, and points of interest present in the selected map
-        window.
+        SVG exports include roads, buildings, and points of interest present in
+        the selected map window.
       </CardFooter>
     </Card>
   );
