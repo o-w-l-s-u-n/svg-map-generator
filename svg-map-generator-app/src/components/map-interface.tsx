@@ -339,30 +339,6 @@ export function MapInterface() {
         bounds?: Bounds;
       };
 
-      if (updatedBounds) {
-        suppressBoundsUpdate.current = 4;
-        setBounds(updatedBounds);
-        const south = Math.min(updatedBounds.south, updatedBounds.north);
-        const north = Math.max(updatedBounds.south, updatedBounds.north);
-        const west = Math.min(updatedBounds.west, updatedBounds.east);
-        const east = Math.max(updatedBounds.west, updatedBounds.east);
-        const center: [number, number] = [
-          (south + north) / 2,
-          (west + east) / 2,
-        ];
-        const latDiff = Math.abs(north - south);
-        const lngDiff = Math.abs(east - west);
-        const approximateZoom = Math.max(
-          5,
-          Math.min(
-            19,
-            Math.floor(12 - Math.log(Math.max(latDiff, lngDiff) + 1e-6) * 1.4)
-          )
-        );
-        setMapCenter(center);
-        setMapZoom(approximateZoom);
-      }
-
       setPreview(svg);
       setPreviewDirty(false);
       setState({ status: "success", size: "preview" });
