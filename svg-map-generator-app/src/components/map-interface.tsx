@@ -462,13 +462,13 @@ export function MapInterface() {
         <div className="space-y-6">
           <div className="relative h-[420px] w-full overflow-hidden rounded-lg border-none">
             {isClient && (
-              <div className="pointer-events-none absolute right-4 top-4 z-[500] w-full max-w-[320px]">
+              <div className="pointer-events-none absolute right-4 top-4 z-[500] w-full max-w-[420px]">
                 <form
-                  className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-card/90 px-3 py-2 shadow-lg backdrop-blur"
+                  className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-card/50 px-3 py-2 shadow-lg backdrop-blur"
                   onSubmit={handleSearch}
                 >
                   <input
-                    className="flex-1 rounded-md border border-transparent bg-transparent text-sm text-foreground focus:outline-none"
+                    className="flex-1 rounded-md border border-transparent bg-transparent text-sm text-foreground placeholder:text-foreground focus:outline-none"
                     placeholder={text.searchPlaceholder}
                     value={searchQuery}
                     onChange={(event) => {

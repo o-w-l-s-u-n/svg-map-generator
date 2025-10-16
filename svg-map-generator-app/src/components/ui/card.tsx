@@ -3,15 +3,12 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-function Card({
-  className,
-  ...props
-}: React.HTMLAttributes<HTMLDivElement>) {
+function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={cn(
-        "rounded-xl border border-border bg-card text-card-foreground shadow-sm",
-        className,
+        "rounded-xl border border-border bg-card/50 text-card-foreground shadow-sm",
+        className
       )}
       {...props}
     />
@@ -23,7 +20,10 @@ function CardHeader({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
-    <div className={cn("flex flex-col space-y-1.5 p-6", className)} {...props} />
+    <div
+      className={cn("flex flex-col space-y-1.5 p-6", className)}
+      {...props}
+    />
   );
 }
 
@@ -33,7 +33,10 @@ function CardTitle({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h3
-      className={cn("text-2xl font-semibold leading-none tracking-tight", className)}
+      className={cn(
+        "text-2xl font-semibold leading-none tracking-tight",
+        className
+      )}
       {...props}
     />
   );
@@ -64,4 +67,11 @@ function CardFooter({
   );
 }
 
-export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter };
+export {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+};
