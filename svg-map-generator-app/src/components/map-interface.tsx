@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import dynamic from "next/dynamic";
 import type { LatLngBounds } from "leaflet";
+import { Loader2, Search } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -222,6 +223,10 @@ export function MapInterface() {
       try {
         setSearchLoading(true);
         setSearchError(null);
+        setPreviewDirty(true);
+        setPreviewRenderStatus("idle");
+        setPreviewRenderError(null);
+        setPreviewPng(null);
         const response = await fetch(
           `/api/search?q=${encodeURIComponent(query)}`
         );
@@ -334,26 +339,29 @@ export function MapInterface() {
         bounds?: Bounds;
       };
 
-      // if (updatedBounds) {
-      //   suppressBoundsUpdate.current = 4;
-      //   setBounds(updatedBounds);
-      //   const south = Math.min(updatedBounds.south, updatedBounds.north);
-      //   const north = Math.max(updatedBounds.south, updatedBounds.north);
-      //   const west = Math.min(updatedBounds.west, updatedBounds.east);
-      //   const east = Math.max(updatedBounds.west, updatedBounds.east);
-      //   const center: [number, number] = [
-      //     (south + north) / 2,
-      //     (west + east) / 2,
-      //   ];
-      //   const latDiff = Math.abs(north - south);
-      //   const lngDiff = Math.abs(east - west);
-      //   const approximateZoom = Math.max(
-      //     5,
-      //     Math.min(19, Math.floor(12 - Math.log(Math.max(latDiff, lngDiff) + 1e-6) * 1.4)),
-      //   );
-      //   setMapCenter(center);
-      //   setMapZoom(approximateZoom);
-      // }
+      if (updatedBounds) {
+        suppressBoundsUpdate.current = 4;
+        setBounds(updatedBounds);
+        const south = Math.min(updatedBounds.south, updatedBounds.north);
+        const north = Math.max(updatedBounds.south, updatedBounds.north);
+        const west = Math.min(updatedBounds.west, updatedBounds.east);
+        const east = Math.max(updatedBounds.west, updatedBounds.east);
+        const center: [number, number] = [
+          (south + north) / 2,
+          (west + east) / 2,
+        ];
+        const latDiff = Math.abs(north - south);
+        const lngDiff = Math.abs(east - west);
+        const approximateZoom = Math.max(
+          5,
+          Math.min(
+            19,
+            Math.floor(12 - Math.log(Math.max(latDiff, lngDiff) + 1e-6) * 1.4)
+          )
+        );
+        setMapCenter(center);
+        setMapZoom(approximateZoom);
+      }
 
       setPreview(svg);
       setPreviewDirty(false);
@@ -453,7 +461,42 @@ export function MapInterface() {
       </CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-6">
-          <div className="h-[420px] w-full overflow-hidden rounded-lg border">
+          <div className="relative h-[420px] w-full overflow-hidden rounded-lg border">
+            {isClient && (
+              <div className="pointer-events-none absolute right-4 top-4 z-[500] w-full max-w-[320px]">
+                <form
+                  className="pointer-events-auto flex items-center gap-2 rounded-lg border border-border bg-card/90 px-3 py-2 shadow-lg backdrop-blur"
+                  onSubmit={handleSearch}
+                >
+                  <input
+                    className="flex-1 rounded-md border border-transparent bg-transparent text-sm text-foreground focus:outline-none"
+                    placeholder="Search cities, addresses, landmarks…"
+                    value={searchQuery}
+                    onChange={(event) => {
+                      setSearchQuery(event.target.value);
+                      if (searchError) {
+                        setSearchError(null);
+                      }
+                    }}
+                    disabled={searchLoading}
+                  />
+                  <Button
+                    type="submit"
+                    variant="outline"
+                    className="h-9 w-9 rounded-full !p-0"
+                    disabled={searchLoading || !searchQuery.trim()}
+                    aria-label="Search the map"
+                  >
+                    {searchLoading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Search className="h-4 w-4" />
+                    )}
+                    <span className="sr-only">Search</span>
+                  </Button>
+                </form>
+              </div>
+            )}
             {isClient ? (
               <MapContainer
                 center={mapCenter}
@@ -479,6 +522,9 @@ export function MapInterface() {
               </div>
             )}
           </div>
+          {searchError && (
+            <p className="text-xs text-rose-500">{searchError}</p>
+          )}
 
           <div className="space-y-3 rounded-lg border border-border bg-card/70 p-4">
             <div className="flex items-center justify-between">
@@ -522,45 +568,6 @@ export function MapInterface() {
         </div>
 
         <div className="space-y-4">
-          <form
-            className="space-y-2 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground"
-            onSubmit={handleSearch}
-          >
-            <div className="flex items-center justify-between">
-              <p className="font-medium text-foreground">Search the map</p>
-              <span className="text-xs text-muted-foreground">
-                Enter a place name
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                placeholder="Search cities, addresses, landmarks…"
-                value={searchQuery}
-                onChange={(event) => {
-                  setSearchQuery(event.target.value);
-                  if (searchError) {
-                    setSearchError(null);
-                  }
-                }}
-                disabled={searchLoading}
-              />
-              <Button
-                type="submit"
-                disabled={searchLoading || !isClient || !searchQuery.trim()}
-              >
-                {searchLoading ? "Searching…" : "Search"}
-              </Button>
-            </div>
-            {searchError && (
-              <p className="text-xs text-rose-600">{searchError}</p>
-            )}
-            <p className="text-xs text-muted-foreground">
-              We use OpenStreetMap’s Nominatim to locate places and adjust the
-              map view for you.
-            </p>
-          </form>
-
           <div className="space-y-2 rounded-lg border border-border bg-muted/40 p-4 text-sm leading-5 text-muted-foreground">
             <p className="font-medium text-foreground">Current bounds</p>
             <p className="font-mono text-xs text-foreground/80">
