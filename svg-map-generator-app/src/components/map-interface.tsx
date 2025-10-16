@@ -131,10 +131,7 @@ function formatAreaDegrees(area: number) {
 }
 
 type StrokeControl = {
-  roads: number;
   outlines: number;
-  water: number;
-  buildings: number;
 };
 
 export function MapInterface() {
@@ -145,26 +142,17 @@ export function MapInterface() {
   const [mapZoom, setMapZoom] = useState(INITIAL_ZOOM);
   const [mapCenter, setMapCenter] = useState<[number, number]>(INITIAL_CENTER);
   const [strokeScale, setStrokeScale] = useState<StrokeControl>({
-    roads: 1,
     outlines: 1,
-    water: 1,
-    buildings: 1,
   });
   const [previewDirty, setPreviewDirty] = useState(true);
   const suppressBoundsUpdate = useRef(0);
-  const handleStrokeChange = useCallback(
-    (key: keyof StrokeControl, value: number) => {
-      setStrokeScale((current) => ({
-        ...current,
-        [key]: value,
-      }));
-      setPreviewDirty(true);
-      setPreviewRenderStatus("idle");
-      setPreviewRenderError(null);
-      setPreviewPng(null);
-    },
-    []
-  );
+  const handleOutlineChange = useCallback((value: number) => {
+    setStrokeScale({ outlines: value });
+    setPreviewDirty(true);
+    setPreviewRenderStatus("idle");
+    setPreviewRenderError(null);
+    setPreviewPng(null);
+  }, []);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -568,45 +556,33 @@ export function MapInterface() {
           <div className="space-y-4 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <div>
               <p className="text-sm font-medium text-foreground">
-                1. Tune stroke thickness
+                1. Adjust outline thickness
               </p>
               <p className="text-xs text-muted-foreground">
-                Smaller values produce finer lines; larger values create bolder
-                strokes in the exported SVG.
+                Use the slider to fine-tune the border weight applied to
+                exported map features.
               </p>
             </div>
-            {(
-              [
-                ["roads", "Roads"],
-                ["outlines", "Outlines"],
-                ["water", "Water"],
-                ["buildings", "Buildings"],
-              ] as Array<[keyof StrokeControl, string]>
-            ).map(([key, label]) => (
-              <div key={key} className="space-y-1">
-                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>{label}</span>
-                  <span className="font-mono text-foreground">
-                    {strokeScale[key].toFixed(2)}×
-                  </span>
-                </div>
-                <input
-                  aria-label={`${label} stroke scale`}
-                  className="h-1 w-full cursor-pointer appearance-none rounded bg-border"
-                  type="range"
-                  min={0.1}
-                  max={3}
-                  step={0.05}
-                  value={strokeScale[key]}
-                  onChange={(event) =>
-                    handleStrokeChange(
-                      key,
-                      Number.parseFloat(event.target.value)
-                    )
-                  }
-                />
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Outlines</span>
+                <span className="font-mono text-foreground">
+                  {strokeScale.outlines.toFixed(2)}×
+                </span>
               </div>
-            ))}
+              <input
+                aria-label="Outlines stroke scale"
+                className="h-1 w-full cursor-pointer appearance-none rounded bg-border"
+                type="range"
+                min={0.1}
+                max={3}
+                step={0.05}
+                value={strokeScale.outlines}
+                onChange={(event) =>
+                  handleOutlineChange(Number.parseFloat(event.target.value))
+                }
+              />
+            </div>
           </div>
 
           <div className="space-y-3 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
