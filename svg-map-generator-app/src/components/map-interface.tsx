@@ -183,7 +183,7 @@ export function MapInterface() {
       return;
     }
     const root = document.documentElement;
-    const resolveTheme = () =>
+    const resolveTheme = (): ThemeMode =>
       root.getAttribute("data-theme") === "dark" ? "dark" : "light";
     let currentTheme = resolveTheme();
     setTheme(currentTheme);
@@ -525,7 +525,7 @@ export function MapInterface() {
             <p className="text-xs text-rose-500">{searchError}</p>
           )}
 
-          <div className="space-y-3 rounded-lg border border-border bg-card/70 p-4">
+          <div className="space-y-3 rounded-lg border border-border bg-transparent p-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-semibold text-foreground">
                 {text.previewHeading}

@@ -1,6 +1,80 @@
 export type Locale = "en" | "ru";
 
-const translations = {
+type LanguageNames = Record<Locale, string>;
+type LanguageShort = Record<Locale, string>;
+
+type CommonMessages = {
+  appName: string;
+  themeToggleAria: string;
+  languageToggleAria: string;
+  switchToLanguage: string;
+  languageNames: LanguageNames;
+  languageShort: LanguageShort;
+};
+
+type PageMessages = {
+  strapline: string;
+  headline: string;
+  description: string;
+};
+
+type MapMessages = {
+  title: string;
+  subtitle: string;
+  searchPlaceholder: string;
+  searchButtonLabel: string;
+  searchButtonSr: string;
+  searchErrors: {
+    empty: string;
+    notFound: string;
+    unexpected: string;
+  };
+  loadingMap: string;
+  boundsPrompt: string;
+  previewHeading: string;
+  previewZoom: string;
+  previewStatus: {
+    rendering: string;
+    error: string;
+    idle: string;
+  };
+  previewAlt: string;
+  previewCanvasError: string;
+  previewConvertError: string;
+  previewOutdatedBadge: string;
+  previewDirtyNotice: string;
+  areaSection: {
+    title: string;
+    approximate: string;
+    zoomTip: string;
+  };
+  strokeHeading: string;
+  strokeDescription: string;
+  outlinesLabel: string;
+  generateHeading: string;
+  generateButton: string;
+  generateButtonLoading: string;
+  downloadHeading: string;
+  downloadButton: string;
+  downloadHint: string;
+  poweredBy: string;
+  footerNote: string;
+  errors: {
+    noBounds: string;
+    exportFailed: string;
+    exportGeneric: string;
+    previewFailed: string;
+  };
+  downloadDirtyWarning: string;
+};
+
+export type Messages = {
+  common: CommonMessages;
+  page: PageMessages;
+  map: MapMessages;
+};
+
+const translations: Record<Locale, Messages> = {
   en: {
     common: {
       appName: "Map Vector Studio",
@@ -167,9 +241,7 @@ const translations = {
         "Превью изменилось. Создайте новое перед скачиванием.",
     },
   },
-} as const;
-
-export type Messages = typeof translations.en;
+};
 
 export function getMessages(locale: Locale): Messages {
   return translations[locale];

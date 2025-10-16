@@ -2,6 +2,8 @@
 
 :root,
 :root[data-theme="light"] {
+  --font-geist-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-geist-mono: "Fira Mono", "Menlo", "Monaco", "Courier New", monospace;
   --background: #f5f3ff;
   --foreground: #2e1065;
   --card: rgba(255, 255, 255, 0.95);
@@ -36,6 +38,8 @@
 }
 
 :root[data-theme="dark"] {
+  --font-geist-sans: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-geist-mono: "Fira Mono", "Menlo", "Monaco", "Courier New", monospace;
   --background: #190032;
   --foreground: #f3e8ff;
   --card: rgba(49, 0, 73, 0.8);
