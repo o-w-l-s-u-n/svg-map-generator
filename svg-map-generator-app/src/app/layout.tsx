@@ -14,7 +14,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Map Vector Forge Studio",
-  description: "Select any OpenStreetMap viewport, fine-tune stroke weights, and export a precision SVG.",
+  description:
+    "Select any OpenStreetMap viewport, fine-tune stroke weights, and export a precision SVG.",
 };
 
 export default function RootLayout({

@@ -3,7 +3,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex min-h-screen flex-col ">
       <header className="w-full">
         <div className="mx-auto flex max-w-6xl items-center justify-end px-6 py-6 sm:px-10">
           <ThemeToggle />
@@ -19,13 +19,13 @@ export default function Home() {
               Choose any OpenStreetMap window and download it as crisp SVG.
             </h1>
             <p className="mt-4 mx-auto max-w-2xl text-balance text-base text-muted-foreground sm:text-lg">
-              Pan, zoom, and finesse the map. When it looks right, generate a shareable SVG that keeps
-              every line sharp in your design tools.
+              Pan, zoom, and finesse the map. When it looks right, generate a
+              shareable SVG that keeps every line sharp in your design tools.
             </p>
           </div>
           <MapInterface />
         </div>
       </main>
-      </div>
+    </div>
   );
 }
