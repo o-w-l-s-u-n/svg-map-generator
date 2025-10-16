@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "OSM Vector Forge",
+  title: "Map Vector Forge Studio",
   description: "Select any OpenStreetMap viewport, fine-tune stroke weights, and export a precision SVG.",
 };
 

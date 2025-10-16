@@ -2,12 +2,9 @@
 
 import "leaflet/dist/leaflet.css";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import type { LatLngBounds } from "leaflet";
-import osmtogeojson from "osmtogeojson";
-import type { FeatureCollection } from "geojson";
-
 import {
   Card,
   CardContent,
@@ -17,7 +14,6 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { geoJsonToSvg } from "@/lib/geojson-to-svg";
 
 type Bounds = {
   north: number;
@@ -35,10 +31,6 @@ type DownloadState =
 const INITIAL_CENTER: [number, number] = [40.7128, -74.006];
 const INITIAL_ZOOM = 13;
 const MAX_EXPORT_AREA_DEGREES = 0.5; // Keep Overpass requests manageable
-
-function boundsToBBox(bounds: Bounds) {
-  return `${bounds.south},${bounds.west},${bounds.north},${bounds.east}`;
-}
 
 function boundsArea(bounds: Bounds) {
   return Math.abs((bounds.north - bounds.south) * (bounds.east - bounds.west));
@@ -97,41 +89,6 @@ function LatLngTracker({
   return null;
 }
 
-async function fetchOsmAsGeoJson(bounds: Bounds) {
-  const bbox = boundsToBBox(bounds);
-  const query = `
-[out:json][timeout:25];
-(
-  way["highway"](${bbox});
-  relation["highway"](${bbox});
-  way["building"](${bbox});
-  relation["building"](${bbox});
-  way["waterway"](${bbox});
-  relation["waterway"](${bbox});
-  way["natural"="water"](${bbox});
-  relation["natural"="water"](${bbox});
-);
-out body;
->;
-out skel qt;
-`.trim();
-
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    headers: {
-      "Content-Type": "text/plain",
-    },
-    body: query,
-  });
-
-  if (!response.ok) {
-    throw new Error(`Overpass API error: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return osmtogeojson(data) as FeatureCollection;
-}
-
 function formatBounds(bounds: Bounds | null) {
   if (!bounds) {
     return "Adjust the map to choose a region.";
@@ -173,6 +130,12 @@ export function MapInterface() {
       [key]: value,
     }));
   }, []);
+  const lastParamsRef = useRef<{ zoom: number; stroke: StrokeControl } | null>(null);
+  const [previewPng, setPreviewPng] = useState<string | null>(null);
+  const [previewRenderStatus, setPreviewRenderStatus] = useState<
+    "idle" | "rendering" | "ready" | "error"
+  >("idle");
+  const [previewRenderError, setPreviewRenderError] = useState<string | null>(null);
 
   const area = useMemo(() => (bounds ? boundsArea(bounds) : 0), [bounds]);
   const areaIsLarge = area > MAX_EXPORT_AREA_DEGREES;
@@ -184,12 +147,33 @@ export function MapInterface() {
     }
 
     try {
-      const geojson = await fetchOsmAsGeoJson(bounds);
-      const svg = geoJsonToSvg(geojson, bounds, {
-        zoom: mapZoom,
-        strokeScale,
+      setState({ status: "loading" });
+      setPreviewRenderStatus("rendering");
+      setPreviewRenderError(null);
+
+      const response = await fetch("/api/export", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bounds,
+          zoom: mapZoom,
+          strokeScale,
+        }),
       });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Failed to generate SVG preview.");
+      }
+
+      const { svg } = (await response.json()) as { svg: string };
       setPreview(svg);
+      lastParamsRef.current = {
+        zoom: mapZoom,
+        stroke: { ...strokeScale },
+      };
       setState({ status: "success", size: "preview" });
     } catch (error) {
       console.error(error);
@@ -200,8 +184,92 @@ export function MapInterface() {
             ? error.message
             : "Something went wrong while exporting the map.",
       });
+      setPreviewRenderStatus("error");
+      setPreviewPng(null);
+      setPreviewRenderError(
+        error instanceof Error ? error.message : "Unable to generate preview.",
+      );
+      lastParamsRef.current = {
+        zoom: mapZoom,
+        stroke: { ...strokeScale },
+      };
     }
   }, [bounds, mapZoom, strokeScale]);
+
+  useEffect(() => {
+    if (!preview || state.status === "loading") {
+      return;
+    }
+    const last = lastParamsRef.current;
+    const currentSignature = JSON.stringify(strokeScale);
+    const lastSignature = last ? JSON.stringify(last.stroke) : null;
+    if (!last || last.zoom !== mapZoom || lastSignature !== currentSignature) {
+      handleGenerate();
+    }
+  }, [strokeScale, mapZoom, preview, handleGenerate, state.status]);
+
+  useEffect(() => {
+    if (!preview) {
+      setPreviewPng(null);
+      setPreviewRenderStatus("idle");
+      setPreviewRenderError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const blob = new Blob([preview], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    setPreviewRenderStatus("rendering");
+    setPreviewRenderError(null);
+    setPreviewPng(null);
+
+    const img = new Image();
+    img.onload = () => {
+      if (cancelled) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      const naturalWidth = img.naturalWidth || img.width || 1024;
+      const naturalHeight = img.naturalHeight || img.height || 768;
+      const maxWidth = 720;
+      let targetWidth = naturalWidth;
+      let targetHeight = naturalHeight;
+      if (targetWidth > maxWidth) {
+        targetWidth = maxWidth;
+        targetHeight = Math.max(1, Math.round((maxWidth / naturalWidth) * naturalHeight));
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        setPreviewRenderStatus("error");
+        setPreviewRenderError("Unable to render preview canvas.");
+        URL.revokeObjectURL(url);
+        return;
+      }
+      context.drawImage(img, 0, 0, targetWidth, targetHeight);
+      const pngData = canvas.toDataURL("image/png");
+      if (!cancelled) {
+        setPreviewPng(pngData);
+        setPreviewRenderStatus("ready");
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => {
+      if (!cancelled) {
+        setPreviewRenderStatus("error");
+        setPreviewRenderError("Unable to convert SVG preview to PNG.");
+      }
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
+
+    return () => {
+      cancelled = true;
+      URL.revokeObjectURL(url);
+    };
+  }, [preview]);
 
   return (
     <Card className="w-full max-w-6xl">
@@ -286,17 +354,17 @@ export function MapInterface() {
 
           <Button
             className="w-full"
-            disabled={!bounds || areaIsLarge}
+            disabled={!bounds || areaIsLarge || state.status === "loading"}
             onClick={handleGenerate}
           >
-            Generate preview
+            {state.status === "loading" ? "Generating…" : "Generate preview"}
           </Button>
 
           <div className="space-y-2 rounded-lg border border-border bg-background/60 p-4 text-sm leading-5 text-muted-foreground">
             <p className="font-medium text-foreground">Generate & download</p>
             <Button
               className="w-full"
-              disabled={!preview}
+              disabled={!preview || previewRenderStatus !== "ready"}
               onClick={() => {
                 if (!preview) return;
                 const blob = new Blob([preview], { type: "image/svg+xml" });
@@ -330,14 +398,27 @@ export function MapInterface() {
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-muted-foreground">Latest preview</p>
               <span className="text-xs text-muted-foreground">
-                {state.status === "success" ? state.size : ""}
+                {previewRenderStatus === "ready" ? `${mapZoom.toFixed(2)}× zoom` : ""}
               </span>
             </div>
             <div className="overflow-hidden rounded-lg border border-border bg-background/70">
-              <div
-                className="max-h-[420px] overflow-auto bg-slate-900/95 p-4"
-                dangerouslySetInnerHTML={{ __html: preview }}
-              />
+              <div className="flex min-h-[220px] items-center justify-center bg-slate-900/95 p-4">
+                {previewRenderStatus === "rendering" && (
+                  <p className="text-xs text-muted-foreground">Rendering PNG preview…</p>
+                )}
+                {previewRenderStatus === "error" && (
+                  <p className="text-xs text-rose-500">
+                    {previewRenderError ?? "Unable to render preview."}
+                  </p>
+                )}
+                {previewRenderStatus === "ready" && previewPng && (
+                  <img
+                    src={previewPng}
+                    alt="Map preview"
+                    className="max-h-[360px] w-full rounded-md object-contain"
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
