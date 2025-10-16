@@ -1,6 +1,6 @@
 "use client";
 
-import { MapInterface } from "@/components/map-interface";
+import { MapInterface } from "@/components/map-interface/index";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useLanguage } from "@/components/language-provider";
