@@ -62,6 +62,7 @@ type MapMessages = {
   errors: {
     noBounds: string;
     exportFailed: string;
+    exportTimeout: string;
     exportGeneric: string;
     previewFailed: string;
   };
@@ -150,6 +151,7 @@ const translations: Record<Locale, Messages> = {
       errors: {
         noBounds: "Move the map to select a region first.",
         exportFailed: "Failed to generate SVG preview.",
+        exportTimeout: "Overpass API timed out. Please zoom in or try again.",
         exportGeneric:
           "Something went wrong while exporting the map.",
         previewFailed: "Unable to generate preview.",
@@ -233,6 +235,7 @@ const translations: Record<Locale, Messages> = {
       errors: {
         noBounds: "Сначала выберите область на карте.",
         exportFailed: "Не удалось создать SVG-превью.",
+        exportTimeout: "Overpass API не ответил вовремя. Попробуйте приблизить карту или повторить позже.",
         exportGeneric:
           "При экспорте карты что-то пошло не так.",
         previewFailed: "Не удалось создать превью.",

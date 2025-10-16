@@ -247,7 +247,16 @@ export function MapInterface() {
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error ?? text.errors.exportFailed);
+        const fallback = response.statusText || text.errors.exportFailed;
+        const message =
+          response.status === 504
+            ? text.errors.exportTimeout
+            : typeof payload?.error === "string"
+              ? payload.error
+              : fallback;
+        setState({ status: "error", message });
+        failPreviewRender(message);
+        return;
       }
 
       const { svg } = (await response.json()) as {
@@ -259,11 +268,9 @@ export function MapInterface() {
       setState({ status: "success", size: "preview" });
     } catch (error) {
       console.error(error);
-      setState({
-        status: "error",
-        message:
-          error instanceof Error ? error.message : text.errors.exportGeneric,
-      });
+      const message =
+        error instanceof Error ? error.message : text.errors.exportGeneric;
+      setState({ status: "error", message });
       failPreviewRender(
         error instanceof Error ? error.message : text.errors.previewFailed
       );
