@@ -93,40 +93,62 @@ function polygonToPath(
   return rings.join(" ");
 }
 
+type ClassifiedGeometry = {
+  linear: string;
+  area: string;
+};
+
 function geometryToSvg(
   geometry: Geometry,
   projection: ReturnType<typeof prepareProjection>,
-) {
+): ClassifiedGeometry {
   switch (geometry.type) {
-    case "LineString":
-      return {
-        paths: lineToPath((geometry as LineString).coordinates, projection),
-        polygons: "",
-      };
+    case "LineString": {
+      const path = lineToPath((geometry as LineString).coordinates, projection);
+      return { linear: path, area: "" };
+    }
     case "MultiLineString": {
       const parts = (geometry as MultiLineString).coordinates
         .map((segment) => lineToPath(segment, projection))
         .filter(Boolean);
-      return { paths: parts.join(" "), polygons: "" };
+      return { linear: parts.join(" "), area: "" };
     }
-    case "Polygon":
-      return {
-        paths: "",
-        polygons: polygonToPath((geometry as Polygon).coordinates, projection),
-      };
+    case "Polygon": {
+      const area = polygonToPath((geometry as Polygon).coordinates, projection);
+      return { linear: "", area };
+    }
     case "MultiPolygon": {
       const shapes = (geometry as MultiPolygon).coordinates
         .map((shape) => polygonToPath(shape, projection))
         .filter(Boolean);
-      return { paths: "", polygons: shapes.join(" ") };
+      return { linear: "", area: shapes.join(" ") };
     }
     default:
-      return { paths: "", polygons: "" };
+      return { linear: "", area: "" };
   }
 }
 
 function dedupeWhitespace(input: string) {
   return input.replace(/\s+/g, " ").trim();
+}
+
+function determineKind(feature: Feature) {
+  const tags =
+    (feature.properties as { tags?: Record<string, string> } | undefined)?.tags ?? {};
+
+  if (typeof tags.highway === "string") {
+    return "road";
+  }
+
+  if (typeof tags.building === "string") {
+    return "building";
+  }
+
+  if (typeof tags.waterway === "string" || tags.natural === "water") {
+    return "water";
+  }
+
+  return "other";
 }
 
 export function geoJsonToSvg(
@@ -138,8 +160,10 @@ export function geoJsonToSvg(
 
   const projection = prepareProjection(bounds, width);
 
-  const pathSegments: string[] = [];
-  const polygonSegments: string[] = [];
+  const roadSegments: string[] = [];
+  const waterSegments: string[] = [];
+  const buildingSegments: string[] = [];
+  const outlineSegments: string[] = [];
 
   featureCollection.features.forEach((feature: Feature) => {
     const { geometry } = feature;
@@ -147,17 +171,35 @@ export function geoJsonToSvg(
       return;
     }
 
-    const { paths, polygons } = geometryToSvg(
-      geometry,
-      projection,
-    );
+    const { linear, area } = geometryToSvg(geometry, projection);
+    const kind = determineKind(feature);
 
-    if (paths) {
-      pathSegments.push(`<path d="${dedupeWhitespace(paths)}" />`);
-    }
-
-    if (polygons) {
-      polygonSegments.push(`<path d="${dedupeWhitespace(polygons)}" />`);
+    if (area) {
+      const d = dedupeWhitespace(area);
+      if (!d) {
+        return;
+      }
+      const element = `<path d="${d}" />`;
+      if (kind === "building") {
+        buildingSegments.push(element);
+      } else if (kind === "water") {
+        waterSegments.push(element);
+      } else {
+        outlineSegments.push(element);
+      }
+    } else if (linear) {
+      const d = dedupeWhitespace(linear);
+      if (!d) {
+        return;
+      }
+      const element = `<path d="${d}" />`;
+      if (kind === "road") {
+        roadSegments.push(element);
+      } else if (kind === "water") {
+        waterSegments.push(element);
+      } else {
+        outlineSegments.push(element);
+      }
     }
   });
 
@@ -165,15 +207,23 @@ export function geoJsonToSvg(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${projection.width.toFixed(0)}" height="${projection.height.toFixed(0)}" viewBox="0 0 ${projection.width.toFixed(2)} ${projection.height.toFixed(2)}">`,
     "<defs>",
     "<style>",
-    ".geom-lines{fill:none;stroke:#555;stroke-width:1;stroke-linecap:round;stroke-linejoin:round;}",
-    ".geom-polygons{fill:#9ec5fe33;stroke:#2b59c3;stroke-width:0.6;stroke-linejoin:round;}",
+    ".layer-water{fill:#38bdf829;stroke:#38bdf8;stroke-width:0.9;stroke-linejoin:round;}",
+    ".layer-buildings{fill:rgba(255,255,255,0);stroke:#1f2933;stroke-width:0.8;stroke-linejoin:round;}",
+    ".layer-roads{fill:rgba(255,255,255,0);stroke:#1e1b4b;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;}",
+    ".layer-outlines{fill:none;stroke:#64748b;stroke-width:0.8;stroke-linecap:round;stroke-linejoin:round;}",
     "</style>",
     "</defs>",
-    "<g class=\"geom-polygons\">",
-    polygonSegments.join(""),
+    "<g class=\"layer-water\">",
+    waterSegments.join(""),
     "</g>",
-    "<g class=\"geom-lines\">",
-    pathSegments.join(""),
+    "<g class=\"layer-buildings\">",
+    buildingSegments.join(""),
+    "</g>",
+    "<g class=\"layer-roads\">",
+    roadSegments.join(""),
+    "</g>",
+    "<g class=\"layer-outlines\">",
+    outlineSegments.join(""),
     "</g>",
     "</svg>",
   ].join("");

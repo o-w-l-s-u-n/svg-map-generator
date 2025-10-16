@@ -72,12 +72,18 @@ function LatLngTracker({ onChange }: { onChange: (bounds: Bounds) => void }) {
 }
 
 async function fetchOsmAsGeoJson(bounds: Bounds) {
+  const bbox = boundsToBBox(bounds);
   const query = `
 [out:json][timeout:25];
 (
-  node(${boundsToBBox(bounds)});
-  way(${boundsToBBox(bounds)});
-  relation(${boundsToBBox(bounds)});
+  way["highway"](${bbox});
+  relation["highway"](${bbox});
+  way["building"](${bbox});
+  relation["building"](${bbox});
+  way["waterway"](${bbox});
+  relation["waterway"](${bbox});
+  way["natural"="water"](${bbox});
+  relation["natural"="water"](${bbox});
 );
 out body;
 >;
