@@ -78,10 +78,5 @@ The UI splits into a viewport, preview pane, and controls column. `use-map-previ
 - Language selection is persisted in `localStorage` under `mvf-language`; add new locales by extending `src/lib/i18n.ts`.
 - The theme toggle writes a `data-theme` attribute and stores the choice under `mvf-theme`. Components watch for the custom `mvf-theme-change` event to refresh previews when the palette changes.
 
-## Development Notes
-- The SVG conversion pipeline is encapsulated in `geojson-to-svg.ts`. Adjust fill or stroke colors, feature classification, or zoom scaling factors there.
-- API routes currently proxy unauthenticated requests to public endpoints. Add caching, authentication, or request queuing as needed before heavy use.
-- There are no automated tests yet; consider adding component or API route coverage if you extend the project.
 
-## License
-No explicit license has been provided. Add one before distributing binaries or accepting contributions.
+
