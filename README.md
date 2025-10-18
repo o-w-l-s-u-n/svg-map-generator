@@ -1,13 +1,13 @@
 # Map Vector Studio
 
-<div style="display:flex">
-  <div>
-    <img src="./IMG_0239.PNG" alt="screen3" />
-  </div>
-  <div>
-    <img src="./app_screen1.png" alt="screen1" />
-    <img src="./app_screen2.png" alt="screen2" />
-  </div>
+<div style="display:flex;">
+
+<img src="./IMG_0239.PNG" alt="screen3" height="500" />
+
+
+<img src="./app_screen1.png" alt="screen1" height="500" />
+<img src="./app_screen2.png" alt="screen2" height="500" />
+
 </div>
 
 Map Vector Studio is an interactive map export tool built with Next.js. It lets you pan and zoom anywhere on OpenStreetMap, tune stroke weights, preview the result, and download a clean SVG that stays crisp in design tools and slide decks.
